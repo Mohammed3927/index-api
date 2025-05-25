@@ -11,24 +11,6 @@ function cleanId(id) {
   return id.trim().replace(/[“”‘’"']/g, '');
 }
 
-app.post('/get-word', (req, res) => {
-  const { text, index } = req.body;
-
-  if (typeof text !== 'string' || (index === undefined || index === null)) {
-    return res.status(400).json({ error: 'Invalid request. Send text (string) and index (number or comma-separated).' });
-  }
-
-  const words = text.trim().split(/\s+/);
-  const indices = typeof index === 'string' ? index.split(',').map(i => parseInt(i.trim())).filter(i => !isNaN(i)) : [index];
-
-  const result = indices.map(i => ({
-    index: i,
-    word: words[i] ?? null
-  }));
-
-  res.json({ results: result });
-});
-
 app.post('/get-highest-role-position', async (req, res) => {
   let { guildId, userId, botToken } = req.body;
 
@@ -37,11 +19,9 @@ app.post('/get-highest-role-position', async (req, res) => {
   }
 
   guildId = cleanId(guildId);
-  if (typeof userId === 'string') {
-    userId = userId.split(',').map(id => cleanId(id));
-  } else {
-    userId = [cleanId(userId)];
-  }
+  const userIds = typeof userId === 'string'
+    ? userId.split(',').map(id => cleanId(id))
+    : [cleanId(userId)];
 
   const tempClient = new Client({
     intents: [
@@ -53,35 +33,26 @@ app.post('/get-highest-role-position', async (req, res) => {
   try {
     await tempClient.login(botToken);
 
-    await new Promise(resolve => {
-      tempClient.once('ready', () => {
-        console.log('Bot ready');
-        resolve();
-      });
-    });
+    // ننتظر لما البوت يكون جاهز
+    await new Promise(resolve => tempClient.once('ready', resolve));
 
-    // جلب الجيلد أولاً من الكاش أو الفيتش
-    let guild = tempClient.guilds.cache.get(guildId);
+    const guild = tempClient.guilds.cache.get(guildId);
+
     if (!guild) {
-      guild = await tempClient.guilds.fetch(guildId);
+      throw new Error('Guild not found in cache. Make sure the bot is in the server and has access.');
     }
 
-    // تأكد أن guild موجود ولديه members manager
-    if (!guild || !guild.members) {
-      throw new Error('Guild or guild.members is undefined');
-    }
-
-    // جلب جميع الأعضاء في الكاش
+    // تحميل جميع أعضاء السيرفر إلى الكاش
     await guild.members.fetch();
 
     const results = [];
 
-    for (const uid of userId) {
+    for (const uid of userIds) {
       try {
         const member = guild.members.cache.get(uid);
 
         if (!member) {
-          throw new Error(`Member with ID ${uid} not found in cache`);
+          throw new Error(`Member with ID ${uid} not found after fetching.`);
         }
 
         const highestRole = member.roles.cache
@@ -96,7 +67,6 @@ app.post('/get-highest-role-position', async (req, res) => {
           position: highestRole?.position ?? null
         });
       } catch (err) {
-        console.error(`Error fetching member or role for userId ${uid}:`, err);
         results.push({
           userId: uid,
           error: 'Failed to fetch user or role',
@@ -106,9 +76,9 @@ app.post('/get-highest-role-position', async (req, res) => {
     }
 
     res.json({ results });
-  } catch (error) {
-    console.error('❌ Error:', error);
-    res.status(500).json({ error: error.message || 'Failed to fetch role information.' });
+  } catch (err) {
+    console.error('❌ Error:', err);
+    res.status(500).json({ error: err.message || 'Unexpected error occurred.' });
   } finally {
     await tempClient.destroy();
   }
@@ -117,3 +87,4 @@ app.post('/get-highest-role-position', async (req, res) => {
 app.listen(port, () => {
   console.log(`✅ API running on http://localhost:${port}`);
 });
+
