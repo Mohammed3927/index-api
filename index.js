@@ -79,12 +79,7 @@ app.post('/get-highest-role-position', async (req, res) => {
 if (!member) {
      throw new Error(`Member with ID ${uid} not found`);
 }
-
-
-        if (!member) {
-          throw new Error(`Member with ID ${uid} not found`);
-        }
-
+        
         const highestRole = member.roles.cache
           .filter(role => role.id !== guild.id)
           .sort((a, b) => b.position - a.position)
