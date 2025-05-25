@@ -1,3 +1,40 @@
+import express from 'express';
+import { Client, GatewayIntentBits } from 'discord.js';
+
+const app = express();
+const port = process.env.PORT || 3000;
+
+const GUILD_ID = '1294995530950377573'; // ID السيرفر الثابت
+
+app.use(express.json());
+
+// ✅ Endpoint: /get-word
+app.post('/get-word', (req, res) => {
+  const { text, ...rest } = req.body;
+
+  if (typeof text !== 'string') {
+    return res.status(400).json({ error: 'Invalid request. "text" must be a string.' });
+  }
+
+  const words = text.trim().split(/\s+/);
+
+  // استخراج index1 - index5
+  const indexes = Object.keys(rest)
+    .filter(key => key.startsWith('index'))
+    .slice(0, 5)
+    .map(key => Number(rest[key]))
+    .filter(index => Number.isInteger(index) && index >= 0);
+
+  if (indexes.length === 0) {
+    return res.status(400).json({ error: 'No valid indexes provided (index1 - index5).' });
+  }
+
+  const result = indexes.map(i => words[i] ?? null);
+
+  res.json({ words: result });
+});
+
+// ✅ Endpoint: /get-highest-role-position
 app.post('/get-highest-role-position', async (req, res) => {
   console.log('Headers:', req.headers);
   console.log('Body:', req.body);
@@ -10,6 +47,7 @@ app.post('/get-highest-role-position', async (req, res) => {
 
   let requests = [];
 
+  // التعامل مع requests array أو user1 - user5
   if (Array.isArray(req.body.requests)) {
     requests = req.body.requests;
   } else {
@@ -60,6 +98,8 @@ app.post('/get-highest-role-position', async (req, res) => {
 
         roles.push({
           userId,
+          username: member.user.username,
+          discriminator: member.user.discriminator,
           roleName: highestRole?.name || null,
           roleId: highestRole?.id || null,
           position: highestRole?.position ?? null
@@ -80,4 +120,8 @@ app.post('/get-highest-role-position', async (req, res) => {
   } finally {
     await tempClient.destroy();
   }
+});
+
+app.listen(port, () => {
+  console.log(`✅ API running on http://localhost:${port}`);
 });
