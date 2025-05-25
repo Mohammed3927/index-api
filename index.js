@@ -6,6 +6,12 @@ const port = process.env.PORT || 3000;
 
 app.use(express.json());
 
+// دالة تنظيف المعرفات من علامات الاقتباس الغريبة
+function cleanId(id) {
+  if (typeof id !== 'string') return id;
+  return id.trim().replace(/[“”‘’"']/g, '');
+}
+
 // ✅ /get-word: يدعم index واحد أو مصفوفة
 app.post('/get-word', (req, res) => {
   const { text, index } = req.body;
@@ -27,13 +33,19 @@ app.post('/get-word', (req, res) => {
 
 // ✅ /get-highest-role-position: يدعم userId واحد أو أكثر
 app.post('/get-highest-role-position', async (req, res) => {
-  const { guildId, userId, botToken } = req.body;
+  let { guildId, userId, botToken } = req.body;
 
   if (!guildId || !userId || !botToken) {
     return res.status(400).json({ error: 'Missing guildId, userId, or botToken.' });
   }
 
-  const userIds = typeof userId === 'string' ? userId.split(',').map(id => id.trim()) : [userId];
+  // تنظيف المعرفات من علامات اقتباس ذكية أو غير صحيحة
+  guildId = cleanId(guildId);
+  if (typeof userId === 'string') {
+    userId = userId.split(',').map(id => cleanId(id));
+  } else {
+    userId = [cleanId(userId)];
+  }
 
   const tempClient = new Client({
     intents: [
@@ -46,26 +58,20 @@ app.post('/get-highest-role-position', async (req, res) => {
     await tempClient.login(botToken);
     const guild = await tempClient.guilds.fetch(guildId);
 
-    // طباعة للتأكد من وجود guild.members
-    console.log('guild.members:', guild.members);
-
     const results = [];
 
-    for (const uid of userIds) {
+    for (const uid of userId) {
       try {
         let member;
 
         if (guild.members) {
-          // حاول تجلب العضو مباشرة
           try {
             member = await guild.members.fetch(uid);
           } catch {
-            // لو ما نجح، حاول تجلب جميع الأعضاء أولًا ثم تجلب العضو من الكاش
             await guild.members.fetch();
             member = guild.members.cache.get(uid);
           }
         } else {
-          // إذا guild.members غير موجود، نرمي خطأ
           throw new Error('guild.members is undefined');
         }
 
