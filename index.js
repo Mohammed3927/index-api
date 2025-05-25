@@ -6,6 +6,41 @@ const port = process.env.PORT || 3000;
 
 app.use(express.json());
 
+// ثبّت معرف السيرفر (guild) هنا
+const GUILD_ID = '1294995530950377573';
+
+let client = null;
+let isReady = false;
+
+// دالة تهيئة وتشغيل البوت مع التوكن
+async function startClient(botToken) {
+  if (client) {
+    await client.destroy();
+    client = null;
+    isReady = false;
+  }
+
+  client = new Client({
+    intents: [
+      GatewayIntentBits.Guilds,
+      GatewayIntentBits.GuildMembers,
+    ],
+  });
+
+  client.once('ready', () => {
+    isReady = true;
+    console.log(`Bot logged in as ${client.user.tag}`);
+  });
+
+  await client.login(botToken);
+
+  // انتظر حتى يجهز البوت
+  await new Promise(resolve => {
+    if (isReady) resolve();
+    else client.once('ready', () => resolve());
+  });
+}
+
 // مسار get-word: يدعم نصوص متعددة ومؤشرات متعددة
 app.post('/get-word', (req, res) => {
   let { texts, indexes } = req.body;
@@ -30,35 +65,26 @@ app.post('/get-word', (req, res) => {
   res.json({ results });
 });
 
-// مسار get-highest-role-position مع تحميل كامل الأعضاء
+// مسار get-highest-role-position يستخدم guild ثابت
 app.post('/get-highest-role-position', async (req, res) => {
-  const { guildId, userId, botToken } = req.body;
+  const { userId, botToken } = req.body;
 
-  if (!guildId || !userId || !botToken) {
-    return res.status(400).json({ error: 'Missing guildId, userId, or botToken.' });
+  if (!userId || !botToken) {
+    return res.status(400).json({ error: 'Missing userId or botToken.' });
   }
 
-  const guildIdStr = String(guildId);
   const userIds = Array.isArray(userId) ? userId.map(String) : [String(userId)];
 
-  const client = new Client({
-    intents: [
-      GatewayIntentBits.Guilds,
-      GatewayIntentBits.GuildMembers,
-    ],
-  });
-
   try {
-    await client.login(botToken);
-
-    await new Promise(resolve => client.once('ready', () => resolve()));
-
-    const guild = client.guilds.cache.get(guildIdStr);
-    if (!guild) {
-      return res.status(404).json({ error: 'Guild not found in cache.' });
+    if (!client || !isReady) {
+      await startClient(botToken);
     }
 
-    // تحميل كامل الأعضاء (يحتاج صلاحيات)
+    const guild = await client.guilds.fetch(GUILD_ID).catch(() => null);
+    if (!guild) {
+      return res.status(404).json({ error: 'Guild not found or bot not in the guild.' });
+    }
+
     await guild.members.fetch();
 
     const results = [];
@@ -104,8 +130,6 @@ app.post('/get-highest-role-position', async (req, res) => {
 
   } catch (error) {
     res.status(500).json({ error: 'Unexpected error.', details: error.message });
-  } finally {
-    await client.destroy();
   }
 });
 
