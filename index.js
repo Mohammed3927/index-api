@@ -62,18 +62,9 @@ app.post('/get-highest-role-position', async (req, res) => {
 
     for (const uid of userId) {
       try {
-        let member;
-
-        if (guild.members) {
-          try {
-            member = await guild.members.fetch(uid);
-          } catch {
-            await guild.members.fetch();
-            member = guild.members.cache.get(uid);
-          }
-        } else {
-          throw new Error('guild.members is undefined');
-        }
+        // جلب كل الأعضاء أولاً
+        const members = await guild.members.fetch();
+        const member = members.get(uid);
 
         if (!member) {
           throw new Error(`Member with ID ${uid} not found`);
