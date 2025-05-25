@@ -8,58 +8,66 @@ const GUILD_ID = '1294995530950377573';
 
 app.use(express.json());
 
+// ✅ Endpoint: /get-word
 app.post('/get-word', (req, res) => {
-  const { text, requests } = req.body;
+  const { text, ...rest } = req.body;
 
-  if (typeof text !== 'string' || !Array.isArray(requests)) {
-    return res.status(400).json({ error: 'Invalid request. Send text (string) and requests (array).' });
-  }
-
-  if (requests.length > 5) {
-    return res.status(400).json({ error: 'Maximum 5 requests allowed.' });
+  if (typeof text !== 'string') {
+    return res.status(400).json({ error: 'Invalid request. "text" must be a string.' });
   }
 
   const words = text.trim().split(/\s+/);
 
-  for (const reqItem of requests) {
-    if (typeof reqItem.index !== 'number' || reqItem.index < 0 || !Number.isInteger(reqItem.index)) {
-      return res.status(400).json({ error: 'Each request must have a valid integer index >= 0.' });
-    }
+  // استخراج index1, index2, ..., index5
+  const indexes = Object.keys(rest)
+    .filter(key => key.startsWith('index'))
+    .slice(0, 5)
+    .map(key => Number(rest[key]))
+    .filter(index => Number.isInteger(index) && index >= 0);
+
+  if (indexes.length === 0) {
+    return res.status(400).json({ error: 'No valid indexes provided (index1 - index5).' });
   }
 
-  const results = requests.map(r => words[r.index] ?? null);
+  const result = indexes.map(i => words[i] ?? null);
 
-  res.json({ words: results });
+  res.json({ words: result });
 });
 
+// ✅ Endpoint: /get-highest-role-position
 app.post('/get-highest-role-position', async (req, res) => {
   console.log('Headers:', req.headers);
   console.log('Body:', req.body);
 
-  if (!req.headers.authorization) {
+  const botToken = req.headers.authorization;
+
+  if (!botToken) {
     return res.status(401).json({ error: 'Missing Authorization header.' });
   }
 
-  if (!Array.isArray(req.body.requests)) {
-    return res.status(400).json({ error: 'Missing or invalid requests array.' });
+  // يدعم user1 ... user5 أو requests array
+  let requests = [];
+
+  if (Array.isArray(req.body.requests)) {
+    requests = req.body.requests;
+  } else {
+    // استخراج user1, user2, ..., user5 من جسم الطلب
+    const users = Object.keys(req.body)
+      .filter(key => key.startsWith('user'))
+      .slice(0, 5)
+      .map(key => ({ userId: req.body[key] }));
+
+    if (users.length > 0) {
+      requests = users;
+    }
   }
 
-  // إذا حبيت ترجع رسالة نجاح فقط عشان تتأكد
-  return res.json({ message: 'Request received successfully.', requests: req.body.requests });
-  
-  // لاحقًا ممكن ترجع الكود الأصلي لمعالجة الطلب
-  /*
-  const botToken = req.headers.authorization;
-  const requests = req.body.requests;
+  if (!requests || requests.length === 0) {
+    return res.status(400).json({ error: 'Missing userId(s) or requests array.' });
+  }
 
   if (requests.length > 5) {
     return res.status(400).json({ error: 'Maximum 5 requests allowed.' });
-  }
-
-  for (const reqItem of requests) {
-    if (typeof reqItem.userId !== 'string' || !reqItem.userId.trim()) {
-      return res.status(400).json({ error: 'Each request must have a valid userId string.' });
-    }
   }
 
   const tempClient = new Client({
@@ -106,7 +114,6 @@ app.post('/get-highest-role-position', async (req, res) => {
   } finally {
     await tempClient.destroy();
   }
-  */
 });
 
 app.listen(port, () => {
