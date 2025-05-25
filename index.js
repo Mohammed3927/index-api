@@ -8,17 +8,6 @@ const GUILD_ID = '1294995530950377573';
 
 app.use(express.json());
 
-// middleware للتحقق من Authorization header
-function checkAuth(req, res, next) {
-  const auth = req.headers['authorization'];
-  if (!auth) {
-    return res.status(401).json({ error: 'Missing Authorization header.' });
-  }
-  req.botToken = auth;
-  next();
-}
-
-// endpoint get-word - يجيب الكلمات حسب index في requests
 app.post('/get-word', (req, res) => {
   const { text, requests } = req.body;
 
@@ -43,14 +32,25 @@ app.post('/get-word', (req, res) => {
   res.json({ words: results });
 });
 
-// endpoint get-highest-role-position - يرجع أعلى رتبة لمستخدمين
-app.post('/get-highest-role-position', checkAuth, async (req, res) => {
-  const { requests } = req.body;
-  const botToken = req.botToken;
+app.post('/get-highest-role-position', async (req, res) => {
+  console.log('Headers:', req.headers);
+  console.log('Body:', req.body);
 
-  if (!Array.isArray(requests)) {
-    return res.status(400).json({ error: 'Missing requests array.' });
+  if (!req.headers.authorization) {
+    return res.status(401).json({ error: 'Missing Authorization header.' });
   }
+
+  if (!Array.isArray(req.body.requests)) {
+    return res.status(400).json({ error: 'Missing or invalid requests array.' });
+  }
+
+  // إذا حبيت ترجع رسالة نجاح فقط عشان تتأكد
+  return res.json({ message: 'Request received successfully.', requests: req.body.requests });
+  
+  // لاحقًا ممكن ترجع الكود الأصلي لمعالجة الطلب
+  /*
+  const botToken = req.headers.authorization;
+  const requests = req.body.requests;
 
   if (requests.length > 5) {
     return res.status(400).json({ error: 'Maximum 5 requests allowed.' });
@@ -106,6 +106,7 @@ app.post('/get-highest-role-position', checkAuth, async (req, res) => {
   } finally {
     await tempClient.destroy();
   }
+  */
 });
 
 app.listen(port, () => {
