@@ -46,11 +46,33 @@ app.post('/get-highest-role-position', async (req, res) => {
     await tempClient.login(botToken);
     const guild = await tempClient.guilds.fetch(guildId);
 
+    // طباعة للتأكد من وجود guild.members
+    console.log('guild.members:', guild.members);
+
     const results = [];
 
     for (const uid of userIds) {
       try {
-        const member = await guild.members.fetch(uid);
+        let member;
+
+        if (guild.members) {
+          // حاول تجلب العضو مباشرة
+          try {
+            member = await guild.members.fetch(uid);
+          } catch {
+            // لو ما نجح، حاول تجلب جميع الأعضاء أولًا ثم تجلب العضو من الكاش
+            await guild.members.fetch();
+            member = guild.members.cache.get(uid);
+          }
+        } else {
+          // إذا guild.members غير موجود، نرمي خطأ
+          throw new Error('guild.members is undefined');
+        }
+
+        if (!member) {
+          throw new Error(`Member with ID ${uid} not found`);
+        }
+
         const highestRole = member.roles.cache
           .filter(role => role.id !== guild.id)
           .sort((a, b) => b.position - a.position)
@@ -63,7 +85,7 @@ app.post('/get-highest-role-position', async (req, res) => {
           position: highestRole?.position ?? null
         });
       } catch (err) {
-        // هنا التعديل!
+        console.error(`Error fetching member or role for userId ${uid}:`, err);
         results.push({
           userId: uid,
           error: 'Failed to fetch user or role',
