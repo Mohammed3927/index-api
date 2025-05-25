@@ -1,40 +1,3 @@
-import express from 'express';
-import { Client, GatewayIntentBits } from 'discord.js';
-
-const app = express();
-const port = process.env.PORT || 3000;
-
-const GUILD_ID = '1294995530950377573';
-
-app.use(express.json());
-
-// ✅ Endpoint: /get-word
-app.post('/get-word', (req, res) => {
-  const { text, ...rest } = req.body;
-
-  if (typeof text !== 'string') {
-    return res.status(400).json({ error: 'Invalid request. "text" must be a string.' });
-  }
-
-  const words = text.trim().split(/\s+/);
-
-  // استخراج index1, index2, ..., index5
-  const indexes = Object.keys(rest)
-    .filter(key => key.startsWith('index'))
-    .slice(0, 5)
-    .map(key => Number(rest[key]))
-    .filter(index => Number.isInteger(index) && index >= 0);
-
-  if (indexes.length === 0) {
-    return res.status(400).json({ error: 'No valid indexes provided (index1 - index5).' });
-  }
-
-  const result = indexes.map(i => words[i] ?? null);
-
-  res.json({ words: result });
-});
-
-// ✅ Endpoint: /get-highest-role-position
 app.post('/get-highest-role-position', async (req, res) => {
   console.log('Headers:', req.headers);
   console.log('Body:', req.body);
@@ -45,13 +8,11 @@ app.post('/get-highest-role-position', async (req, res) => {
     return res.status(401).json({ error: 'Missing Authorization header.' });
   }
 
-  // يدعم user1 ... user5 أو requests array
   let requests = [];
 
   if (Array.isArray(req.body.requests)) {
     requests = req.body.requests;
   } else {
-    // استخراج user1, user2, ..., user5 من جسم الطلب
     const users = Object.keys(req.body)
       .filter(key => key.startsWith('user'))
       .slice(0, 5)
@@ -85,6 +46,8 @@ app.post('/get-highest-role-position', async (req, res) => {
 
     for (const reqItem of requests) {
       const userId = reqItem.userId;
+      console.log(`🔍 Trying to fetch member with ID: ${userId}`);
+
       try {
         const member = await guild.members.fetch(userId);
 
@@ -93,6 +56,8 @@ app.post('/get-highest-role-position', async (req, res) => {
           .sort((a, b) => b.position - a.position)
           .first();
 
+        console.log(`✅ Fetched member: ${member.user.tag}, Highest role: ${highestRole?.name || 'None'}`);
+
         roles.push({
           userId,
           roleName: highestRole?.name || null,
@@ -100,6 +65,7 @@ app.post('/get-highest-role-position', async (req, res) => {
           position: highestRole?.position ?? null
         });
       } catch (err) {
+        console.error(`❌ Failed to fetch member with ID: ${userId}`, err.message);
         roles.push({
           userId,
           error: 'User not found or cannot fetch member.'
@@ -109,13 +75,9 @@ app.post('/get-highest-role-position', async (req, res) => {
 
     res.json({ roles });
   } catch (error) {
-    console.error('❌ Error fetching role:', error);
+    console.error('❌ Error setting up client or fetching guild:', error);
     res.status(500).json({ error: 'Failed to fetch role information.' });
   } finally {
     await tempClient.destroy();
   }
-});
-
-app.listen(port, () => {
-  console.log(`✅ API running on http://localhost:${port}`);
 });
