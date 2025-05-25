@@ -4,12 +4,21 @@ import { Client, GatewayIntentBits } from 'discord.js';
 const app = express();
 const port = process.env.PORT || 3000;
 
-// السيرفر الثابت
-const GUILD_ID = "1294995530950377573";
+const GUILD_ID = '1294995530950377573';
 
 app.use(express.json());
 
-// تعديل /get-word لقبول مصفوفة من الطلبات بدل مصفوفة من اندكسات
+// middleware للتحقق من Authorization header
+function checkAuth(req, res, next) {
+  const auth = req.headers['authorization'];
+  if (!auth) {
+    return res.status(401).json({ error: 'Missing Authorization header.' });
+  }
+  req.botToken = auth;
+  next();
+}
+
+// endpoint get-word - يجيب الكلمات حسب index في requests
 app.post('/get-word', (req, res) => {
   const { text, requests } = req.body;
 
@@ -23,32 +32,30 @@ app.post('/get-word', (req, res) => {
 
   const words = text.trim().split(/\s+/);
 
-  // نتأكد ان كل طلب فيه index رقم صحيح
   for (const reqItem of requests) {
     if (typeof reqItem.index !== 'number' || reqItem.index < 0 || !Number.isInteger(reqItem.index)) {
       return res.status(400).json({ error: 'Each request must have a valid integer index >= 0.' });
     }
   }
 
-  // نعالج كل طلب لوحده
   const results = requests.map(r => words[r.index] ?? null);
 
   res.json({ words: results });
 });
 
-// تعديل /get-highest-role-position لقبول مصفوفة من الطلبات كل واحد فيها userId منفصل
-app.post('/get-highest-role-position', async (req, res) => {
-  const { botToken, requests } = req.body;
+// endpoint get-highest-role-position - يرجع أعلى رتبة لمستخدمين
+app.post('/get-highest-role-position', checkAuth, async (req, res) => {
+  const { requests } = req.body;
+  const botToken = req.botToken;
 
-  if (!botToken || !Array.isArray(requests)) {
-    return res.status(400).json({ error: 'Missing botToken or requests array.' });
+  if (!Array.isArray(requests)) {
+    return res.status(400).json({ error: 'Missing requests array.' });
   }
 
   if (requests.length > 5) {
     return res.status(400).json({ error: 'Maximum 5 requests allowed.' });
   }
 
-  // كل عنصر في requests لازم يحتوي userId (string)
   for (const reqItem of requests) {
     if (typeof reqItem.userId !== 'string' || !reqItem.userId.trim()) {
       return res.status(400).json({ error: 'Each request must have a valid userId string.' });
