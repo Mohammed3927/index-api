@@ -1,183 +1,84 @@
-const {
-  Client,
-  GatewayIntentBits,
-  Partials,
-  Collection,
-  ActionRowBuilder,
-  StringSelectMenuBuilder,
-  EmbedBuilder,
-  ButtonBuilder,
-  ButtonStyle
-} = require('discord.js');
+import express from 'express';
+import { Client, GatewayIntentBits } from 'discord.js';
 
-const fs = require('fs');
-const path = require('path');
-const config = require('./config');
+const app = express();
+const port = process.env.PORT || 3000;
 
-// ====== البوت الأساسي (اللي عليه الأوامر) ======
+app.use(express.json());
 
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ],
-  partials: [Partials.Channel]
+// ✅ /get-word: يدعم index واحد أو مصفوفة
+app.post('/get-word', (req, res) => {
+  const { text, index } = req.body;
+
+  if (typeof text !== 'string' || (!index && index !== 0)) {
+    return res.status(400).json({ error: 'Invalid request. Send text (string) and index (number or comma-separated).' });
+  }
+
+  const words = text.trim().split(/\s+/);
+  const indices = typeof index === 'string' ? index.split(',').map(i => parseInt(i.trim())) : [index];
+
+  const result = indices.map(i => ({
+    index: i,
+    word: words[i] ?? null
+  }));
+
+  res.json({ results: result });
 });
 
-client.config = config;
-client.commands = new Collection();
-const commandFiles = fs.readdirSync('./discord-message-counter-bot/commands').filter(file => file.endsWith('.js'));
+// ✅ /get-highest-role-position: يدعم userId واحد أو أكثر
+app.post('/get-highest-role-position', async (req, res) => {
+  const { guildId, userId, botToken } = req.body;
 
-for (const file of commandFiles) {
-  const command = require(`./discord-message-counter-bot/commands/${file}`);
-  client.commands.set(command.name, command);
-}
-
-client.dbPath = path.join(__dirname, 'database.json');
-client.db = JSON.parse(fs.readFileSync(client.dbPath));
-
-client.saveDB = () => {
-  fs.writeFileSync(client.dbPath, JSON.stringify(client.db, null, 2));
-};
-
-client.on('interactionCreate', async interaction => {
-  if (interaction.isStringSelectMenu()) {
-    const selected = interaction.values[0];
-    const userId = interaction.user.id;
-
-    if (client.db.selectedClan[userId]) {
-      return interaction.reply({ content: '❌ لقد اخترت كلان بالفعل ولا يمكنك تغييره.', flags: 64 });
-    }
-
-    client.db.selectedClan[userId] = selected;
-
-    if (!client.db.clans[selected]) {
-      client.db.clans[selected] = { messages: 0, rep: 0, members: [], missions: 0 };
-    }
-
-    if (!client.db.clans[selected].members.includes(userId)) {
-      client.db.clans[selected].members.push(userId);
-    }
-
-    client.saveDB();
-    return interaction.reply({ content: `✅ تم تسجيلك في كلان **${selected}** بنجاح!`, flags: 64 });
+  if (!guildId || !userId || !botToken) {
+    return res.status(400).json({ error: 'Missing guildId, userId, or botToken.' });
   }
 
-  if (interaction.isButton()) {
-    const [action, targetPage] = interaction.customId.split('_');
-    if (!interaction.message || !interaction.message.embeds.length) return;
+  const userIds = typeof userId === 'string' ? userId.split(',').map(id => id.trim()) : [userId];
 
-    const embed = interaction.message.embeds[0];
-    const type = embed.title.includes('شخصية') ? 'per' : 'clan';
-    const missions = client.db.missions[type];
-    const page = parseInt(targetPage);
-
-    const paginated = missions
-      .slice((page - 1) * 10, page * 10)
-      .map((m, i) => `${(page - 1) * 10 + i + 1}. ${m}`)
-      .join('\n') || 'لا توجد مهام';
-
-    const newEmbed = EmbedBuilder.from(embed)
-      .setDescription(paginated)
-      .setFooter({ text: `Page ${page}` });
-
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`page_${page - 1}`).setLabel('⬅️').setStyle(ButtonStyle.Primary).setDisabled(page === 1),
-      new ButtonBuilder().setCustomId(`page_${page + 1}`).setLabel('➡️').setStyle(ButtonStyle.Primary).setDisabled(page * 10 >= missions.length)
-    );
-
-    await interaction.update({ embeds: [newEmbed], components: [row] });
-  }
-});
-
-client.on('messageCreate', async (message) => {
-  if (message.author.bot) return;
-
-  const userId = message.author.id;
-  const userClan = client.db.selectedClan[userId];
-
-  if (!client.db.users[userId]) client.db.users[userId] = { rep: 0, given: 0, messages: 0 };
-  client.db.users[userId].messages++;
-
-  if (userClan && client.db.clans[userClan]) {
-    client.db.clans[userClan].messages++;
-  }
-
-  if (client.db.users[userId].messages === 100) {
-    const congrats = new EmbedBuilder()
-      .setAuthor({ name: message.author.username, iconURL: message.guild.iconURL() })
-      .setDescription('🎉 مبروك! وصلت 100 رسالة في السيرفر!')
-      .setFooter({ text: 'استمر في التفاعل!' });
-
-    message.channel.send({ embeds: [congrats] });
-  }
-
-  client.saveDB();
-
-  if (!message.content.startsWith(config.prefix)) return;
-
-  const args = message.content.slice(config.prefix.length).trim().split(/ +/);
-  const commandName = args.shift().toLowerCase();
-  const command = client.commands.get(commandName);
-
-  const isAdmin = message.member.permissions.has('Administrator');
-  const hasRole = message.member.roles.cache.has(config.allowedRoleId);
-  const inAllowedChannel = message.channel.id === config.allowedChannelId;
-
-  if (!command) return;
-
-  if (!isAdmin) {
-    if (!hasRole) return message.reply('❌ ما تملك الصلاحية لاستعمال هذا الأمر.');
-    if (!inAllowedChannel) return message.reply('❌ ما تقدر تستخدم الأوامر إلا في الروم المخصص.');
-  }
-
-  if (command.clanRequired && !client.db.selectedClan[userId]) {
-    return message.reply('❌ يجب أن تكون داخل كلان لاستخدام هذا الأمر.');
-  }
+  const tempClient = new Client({
+    intents: [
+      GatewayIntentBits.Guilds,
+      GatewayIntentBits.GuildMembers
+    ]
+  });
 
   try {
-    await command.execute(message, args, client);
-  } catch (err) {
-    console.error(err);
-    message.reply('⚠️ حدث خطأ أثناء تنفيذ الأمر.');
+    await tempClient.login(botToken);
+    const guild = await tempClient.guilds.fetch(guildId);
+
+    const results = [];
+
+    for (const uid of userIds) {
+      try {
+        const member = await guild.members.fetch(uid);
+        const highestRole = member.roles.cache
+          .filter(role => role.id !== guild.id)
+          .sort((a, b) => b.position - a.position)
+          .first();
+
+        results.push({
+          userId: uid,
+          roleName: highestRole?.name || null,
+          roleId: highestRole?.id || null,
+          position: highestRole?.position ?? null
+        });
+      } catch (err) {
+        results.push({
+          userId: uid,
+          error: 'Failed to fetch user or role'
+        });
+      }
+    }
+
+    res.json({ results });
+  } catch (error) {
+    console.error('❌ Error:', error);
+    res.status(500).json({ error: 'Failed to fetch role information.' });
+  } finally {
+    await tempClient.destroy();
   }
 });
 
-client.once('ready', () => {
-  console.log(`🤖 Logged in as ${client.user.tag}`);
-  client.user.setPresence({
-    activities: [{
-      name: 'ASWAYZ Community',
-      type: 1,
-      url: 'https://twitch.tv/mtnews'
-    }],
-    status: 'online'
-  });
+app.listen(port, () => {
+  console.log(`✅ API running on http://localhost:${port}`);
 });
-
-client.login(config.token);
-
-// ====== تشغيل البوتات الإضافية (للحالة فقط) ======
-
-if (Array.isArray(config.token2)) {
-  config.token2.forEach((token, index) => {
-    const statusClient = new Client({
-      intents: [GatewayIntentBits.Guilds]
-    });
-
-    statusClient.once('ready', () => {
-      console.log(`🟢 Status Bot ${index + 1} Logged in as ${statusClient.user.tag}`);
-      statusClient.user.setPresence({
-        activities: [{
-          name: 'ASWAYZ Community',
-          type: 1,
-          url: 'https://twitch.tv/mtnews'
-        }],
-        status: 'online'
-      });
-    });
-
-    statusClient.login(token);
-  });
-}
