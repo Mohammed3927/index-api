@@ -1,3 +1,31 @@
+import express from 'express';
+import { Client, GatewayIntentBits } from 'discord.js';
+
+const app = express();
+const port = process.env.PORT || 3000;
+
+app.use(express.json());
+
+// ✅ Get word(s) by index or multiple indexes
+app.post('/get-word', (req, res) => {
+  const { text, index } = req.body;
+
+  if (typeof text !== 'string' || (!Array.isArray(index) && typeof index !== 'number')) {
+    return res.status(400).json({ error: 'Invalid request. Send text (string) and index (number or array).' });
+  }
+
+  const words = text.trim().split(/\s+/);
+  const indexes = Array.isArray(index) ? index : [index];
+
+  const results = indexes.map((i, idx) => ({
+    index: idx,
+    word: words[i] ?? null
+  }));
+
+  res.json({ results });
+});
+
+// ✅ Get highest role position(s)
 app.post('/get-highest-role-position', async (req, res) => {
   const { guildId, userId, botToken } = req.body;
 
@@ -5,69 +33,55 @@ app.post('/get-highest-role-position', async (req, res) => {
     return res.status(400).json({ error: 'Missing guildId, userId, or botToken.' });
   }
 
-  const tempClient = new Client({
-    intents: [
-      GatewayIntentBits.Guilds,
-      GatewayIntentBits.GuildMembers
-    ]
+  const client = new Client({
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers]
   });
 
   try {
-    await tempClient.login(botToken);
-    const guild = await tempClient.guilds.fetch(guildId);
+    await client.login(botToken);
+    const guild = await client.guilds.fetch(guildId);
 
-    if (typeof userId === 'string') {
-      const member = await guild.members.fetch(userId);
-      const highestRole = member.roles.cache
-        .filter(role => role.id !== guild.id)
-        .sort((a, b) => b.position - a.position)
-        .first();
+    const ids = Array.isArray(userId) ? userId : [userId];
 
-      return res.json({
-        roleName: highestRole?.name || null,
-        roleId: highestRole?.id || null,
-        position: highestRole?.position ?? null
-      });
-    }
+    const results = [];
 
-    if (Array.isArray(userId)) {
-      const results = [];
-      for (let i = 0; i < userId.length; i++) {
-        try {
-          const member = await guild.members.fetch(userId[i]);
-          const highestRole = member.roles.cache
-            .filter(role => role.id !== guild.id)
-            .sort((a, b) => b.position - a.position)
-            .first();
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i];
+      try {
+        const member = await guild.members.fetch(id);
+        const highestRole = member.roles.cache
+          .filter(role => role.id !== guild.id)
+          .sort((a, b) => b.position - a.position)
+          .first();
 
-          results.push({
-            index: i,
-            userId: userId[i],
-            roleName: highestRole?.name || null,
-            roleId: highestRole?.id || null,
-            position: highestRole?.position ?? null
-          });
-        } catch (memberError) {
-          results.push({
-            index: i,
-            userId: userId[i],
-            error: 'Failed to fetch member or roles.',
-            details: memberError.message
-          });
-        }
+        results.push({
+          index: i,
+          userId: id,
+          roleName: highestRole?.name || null,
+          roleId: highestRole?.id || null,
+          position: highestRole?.position ?? null
+        });
+      } catch (err) {
+        results.push({
+          index: i,
+          userId: id,
+          error: 'Failed to fetch member or roles.',
+          details: err.message
+        });
       }
-
-      return res.json({ results });
     }
 
-    return res.status(400).json({ error: 'userId must be string or array of strings.' });
-
+    res.json({ results });
   } catch (error) {
     res.status(500).json({
       error: 'Failed to fetch role information.',
       details: error.message
     });
   } finally {
-    await tempClient.destroy();
+    await client.destroy();
   }
+});
+
+app.listen(port, () => {
+  console.log(`✅ API running at http://localhost:${port}`);
 });
