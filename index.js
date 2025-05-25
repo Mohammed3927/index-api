@@ -60,9 +60,18 @@ app.post('/get-highest-role-position', async (req, res) => {
       });
     });
 
-    const guild = await tempClient.guilds.fetch(guildId);
+    // جلب الجيلد أولاً من الكاش أو الفيتش
+    let guild = tempClient.guilds.cache.get(guildId);
+    if (!guild) {
+      guild = await tempClient.guilds.fetch(guildId);
+    }
 
-    // هنا بنجيب كل أعضاء السيرفر للكاش كامل
+    // تأكد أن guild موجود ولديه members manager
+    if (!guild || !guild.members) {
+      throw new Error('Guild or guild.members is undefined');
+    }
+
+    // جلب جميع الأعضاء في الكاش
     await guild.members.fetch();
 
     const results = [];
