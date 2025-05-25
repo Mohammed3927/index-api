@@ -6,13 +6,11 @@ const port = process.env.PORT || 3000;
 
 app.use(express.json());
 
-// دالة تنظيف المعرفات من علامات الاقتباس الغريبة
 function cleanId(id) {
   if (typeof id !== 'string') return id;
   return id.trim().replace(/[“”‘’"']/g, '');
 }
 
-// ✅ /get-word: يدعم index واحد أو مصفوفة
 app.post('/get-word', (req, res) => {
   const { text, index } = req.body;
 
@@ -31,7 +29,6 @@ app.post('/get-word', (req, res) => {
   res.json({ results: result });
 });
 
-// ✅ /get-highest-role-position: يدعم userId واحد أو أكثر
 app.post('/get-highest-role-position', async (req, res) => {
   let { guildId, userId, botToken } = req.body;
 
@@ -39,7 +36,6 @@ app.post('/get-highest-role-position', async (req, res) => {
     return res.status(400).json({ error: 'Missing guildId, userId, or botToken.' });
   }
 
-  // تنظيف المعرفات من علامات اقتباس ذكية أو غير صحيحة
   guildId = cleanId(guildId);
   if (typeof userId === 'string') {
     userId = userId.split(',').map(id => cleanId(id));
@@ -56,17 +52,27 @@ app.post('/get-highest-role-position', async (req, res) => {
 
   try {
     await tempClient.login(botToken);
+
+    await new Promise(resolve => {
+      tempClient.once('ready', () => {
+        console.log('Bot ready');
+        resolve();
+      });
+    });
+
     const guild = await tempClient.guilds.fetch(guildId);
+
+    // هنا بنجيب كل أعضاء السيرفر للكاش كامل
+    await guild.members.fetch();
 
     const results = [];
 
     for (const uid of userId) {
       try {
-        // جلب العضو مباشرة عن طريق fetch
-        const member = await guild.members.fetch(uid);
+        const member = guild.members.cache.get(uid);
 
         if (!member) {
-          throw new Error(`Member with ID ${uid} not found`);
+          throw new Error(`Member with ID ${uid} not found in cache`);
         }
 
         const highestRole = member.roles.cache
@@ -102,4 +108,3 @@ app.post('/get-highest-role-position', async (req, res) => {
 app.listen(port, () => {
   console.log(`✅ API running on http://localhost:${port}`);
 });
-
