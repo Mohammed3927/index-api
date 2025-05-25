@@ -1,90 +1,66 @@
-const express = require('express');
+import express from 'express';
+import { Client, GatewayIntentBits } from 'discord.js';
+
 const app = express();
+const port = process.env.PORT || 3000;
+
 app.use(express.json());
 
-function getParam(req, key) {
-    return req.body[key] || req.query[key] || req.headers[key];
-}
+// ✅ existing endpoint: /get-word
+app.post('/get-word', (req, res) => {
+  const { text, index } = req.body;
 
-// ========== GET WORDS ==========
-app.all('/get-words', (req, res) => {
-    const sentence = getParam(req, 'sentence');
-    let indexes = getParam(req, 'indexes');
+  if (typeof text !== 'string' || typeof index !== 'number') {
+    return res.status(400).json({ error: 'Invalid request. Send text (string) and index (number).' });
+  }
 
-    if (!sentence || indexes === undefined) {
-        return res.status(400).send('يجب توفير sentence و indexes.');
-    }
+  const words = text.trim().split(/\s+/);
+  const word = words[index] ?? null;
 
-    if (typeof indexes === 'string') {
-        indexes = indexes.split(',').map(i => parseInt(i));
-    } else if (typeof indexes === 'number') {
-        indexes = [indexes];
-    } else if (Array.isArray(indexes)) {
-        indexes = indexes.map(i => parseInt(i));
-    } else {
-        return res.status(400).send('indexes يجب أن تكون رقم أو نص أو مصفوفة.');
-    }
-
-    const words = sentence.split(' ');
-    let responseText = indexes.map(i => words[i] || '').join('\n');
-
-    res.setHeader('Content-Type', 'text/plain');
-    res.send(responseText);
+  res.json({ word });
 });
 
-// ========== GET HIGHEST ROLE ==========
-app.all('/get-highest-role', (req, res) => {
-    let users = getParam(req, 'users');
+// ✅ new endpoint: /get-highest-role-position
+app.post('/get-highest-role-position', async (req, res) => {
+  const { guildId, userId, botToken } = req.body;
 
-    if (!users) {
-        return res.status(400).send('يجب توفير users.');
-    }
+  if (!guildId || !userId || !botToken) {
+    return res.status(400).json({ error: 'Missing guildId, userId, or botToken.' });
+  }
 
-    if (typeof users === 'string') {
-        users = users.split(',').map(u => u.trim());
-    } else if (!Array.isArray(users)) {
-        users = [users];
-    }
+  // Create temporary Discord client
+  const tempClient = new Client({
+    intents: [
+      GatewayIntentBits.Guilds,
+      GatewayIntentBits.GuildMembers
+    ]
+  });
 
-    const mockUsers = {
-        "user1": [
-            { role: "Admin", position: 4 },
-            { role: "Member", position: 1 },
-            { role: "Moderator", position: 2 }
-        ],
-        "user2": [
-            { role: "Owner", position: 5 },
-            { role: "Guest", position: 0 },
-            { role: "Helper", position: 2 }
-        ],
-        "user3": [
-            { role: "VIP", position: 3 },
-            { role: "User", position: 1 }
-        ]
-    };
+  try {
+    // Login using token sent in request
+    await tempClient.login(botToken);
 
-    let responseText = '';
+    const guild = await tempClient.guilds.fetch(guildId);
+    const member = await guild.members.fetch(userId);
 
-    users.forEach(userId => {
-        const roles = mockUsers[userId] || [];
-        if (roles.length === 0) {
-            responseText += `-1\nUnknown\n`; // في حال ما فيه بيانات
-            return;
-        }
+    const highestRole = member.roles.cache
+      .filter(role => role.id !== guild.id) // Ignore @everyone
+      .sort((a, b) => b.position - a.position)
+      .first();
 
-        const topRole = roles.reduce((best, role) =>
-            role.position > best.position ? role : best
-        );
-
-        responseText += `${topRole.position}\n${topRole.role}\n`;
+    res.json({
+      roleName: highestRole?.name || null,
+      roleId: highestRole?.id || null,
+      position: highestRole?.position ?? null
     });
-
-    res.setHeader('Content-Type', 'text/plain');
-    res.send(responseText.trim());
+  } catch (error) {
+    console.error('❌ Error fetching role:', error);
+    res.status(500).json({ error: 'Failed to fetch role information.' });
+  } finally {
+    await tempClient.destroy(); // Always clean up
+  }
 });
 
-// ========== تشغيل السيرفر ==========
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`✅ السيرفر شغال على http://localhost:${PORT}`);
+app.listen(port, () => {
+  console.log(`✅ API running on http://localhost:${port}`);
 });
