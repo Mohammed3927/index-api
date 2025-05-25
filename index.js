@@ -10,12 +10,12 @@ app.use(express.json());
 app.post('/get-word', (req, res) => {
   const { text, index } = req.body;
 
-  if (typeof text !== 'string' || (!index && index !== 0)) {
+  if (typeof text !== 'string' || (index === undefined || index === null)) {
     return res.status(400).json({ error: 'Invalid request. Send text (string) and index (number or comma-separated).' });
   }
 
   const words = text.trim().split(/\s+/);
-  const indices = typeof index === 'string' ? index.split(',').map(i => parseInt(i.trim())) : [index];
+  const indices = typeof index === 'string' ? index.split(',').map(i => parseInt(i.trim())).filter(i => !isNaN(i)) : [index];
 
   const result = indices.map(i => ({
     index: i,
@@ -63,9 +63,11 @@ app.post('/get-highest-role-position', async (req, res) => {
           position: highestRole?.position ?? null
         });
       } catch (err) {
+        // هنا التعديل!
         results.push({
           userId: uid,
-          error: 'Failed to fetch user or role'
+          error: 'Failed to fetch user or role',
+          details: err.message || String(err)
         });
       }
     }
@@ -73,7 +75,7 @@ app.post('/get-highest-role-position', async (req, res) => {
     res.json({ results });
   } catch (error) {
     console.error('❌ Error:', error);
-    res.status(500).json({ error: 'Failed to fetch role information.' });
+    res.status(500).json({ error: error.message || 'Failed to fetch role information.' });
   } finally {
     await tempClient.destroy();
   }
@@ -81,4 +83,4 @@ app.post('/get-highest-role-position', async (req, res) => {
 
 app.listen(port, () => {
   console.log(`✅ API running on http://localhost:${port}`);
-})
+});
