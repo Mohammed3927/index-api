@@ -93,7 +93,7 @@ app.post('/get-highest-role-position', async (req, res) => {
       const uid = userIds[i];
 
       try {
-        const member = guild.members.cache.get(uid);
+         const member = await guild.members.fetch(uid).catch(() => null);
         if (!member) {
           results.push({
             index: i,
