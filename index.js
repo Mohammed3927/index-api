@@ -1,90 +1,90 @@
-import express from 'express';
-import { Client, GatewayIntentBits } from 'discord.js';
-
+const express = require('express');
 const app = express();
-const port = process.env.PORT || 3000;
-
 app.use(express.json());
 
-function cleanId(id) {
-  if (typeof id !== 'string') return id;
-  return id.trim().replace(/[“”‘’"']/g, '');
+function getParam(req, key) {
+    return req.body[key] || req.query[key] || req.headers[key];
 }
 
-app.post('/get-highest-role-position', async (req, res) => {
-  let { guildId, userId, botToken } = req.body;
+// ========== GET WORDS ==========
+app.all('/get-words', (req, res) => {
+    const sentence = getParam(req, 'sentence');
+    let indexes = getParam(req, 'indexes');
 
-  if (!guildId || !userId || !botToken) {
-    return res.status(400).json({ error: 'Missing guildId, userId, or botToken.' });
-  }
-
-  guildId = cleanId(guildId);
-  const userIds = typeof userId === 'string'
-    ? userId.split(',').map(id => cleanId(id))
-    : [cleanId(userId)];
-
-  const tempClient = new Client({
-    intents: [
-      GatewayIntentBits.Guilds,
-      GatewayIntentBits.GuildMembers
-    ]
-  });
-
-  try {
-    await tempClient.login(botToken);
-
-    // ننتظر لما البوت يكون جاهز
-    await new Promise(resolve => tempClient.once('ready', resolve));
-
-    const guild = tempClient.guilds.cache.get(guildId);
-
-    if (!guild) {
-      throw new Error('Guild not found in cache. Make sure the bot is in the server and has access.');
+    if (!sentence || indexes === undefined) {
+        return res.status(400).send('يجب توفير sentence و indexes.');
     }
 
-    // تحميل جميع أعضاء السيرفر إلى الكاش
-    await guild.members.fetch();
+    if (typeof indexes === 'string') {
+        indexes = indexes.split(',').map(i => parseInt(i));
+    } else if (typeof indexes === 'number') {
+        indexes = [indexes];
+    } else if (Array.isArray(indexes)) {
+        indexes = indexes.map(i => parseInt(i));
+    } else {
+        return res.status(400).send('indexes يجب أن تكون رقم أو نص أو مصفوفة.');
+    }
 
-    const results = [];
+    const words = sentence.split(' ');
+    let responseText = indexes.map(i => words[i] || '').join('\n');
 
-    for (const uid of userIds) {
-      try {
-        const member = guild.members.cache.get(uid);
+    res.setHeader('Content-Type', 'text/plain');
+    res.send(responseText);
+});
 
-        if (!member) {
-          throw new Error(`Member with ID ${uid} not found after fetching.`);
+// ========== GET HIGHEST ROLE ==========
+app.all('/get-highest-role', (req, res) => {
+    let users = getParam(req, 'users');
+
+    if (!users) {
+        return res.status(400).send('يجب توفير users.');
+    }
+
+    if (typeof users === 'string') {
+        users = users.split(',').map(u => u.trim());
+    } else if (!Array.isArray(users)) {
+        users = [users];
+    }
+
+    const mockUsers = {
+        "user1": [
+            { role: "Admin", position: 4 },
+            { role: "Member", position: 1 },
+            { role: "Moderator", position: 2 }
+        ],
+        "user2": [
+            { role: "Owner", position: 5 },
+            { role: "Guest", position: 0 },
+            { role: "Helper", position: 2 }
+        ],
+        "user3": [
+            { role: "VIP", position: 3 },
+            { role: "User", position: 1 }
+        ]
+    };
+
+    let responseText = '';
+
+    users.forEach(userId => {
+        const roles = mockUsers[userId] || [];
+        if (roles.length === 0) {
+            responseText += `-1\nUnknown\n`; // في حال ما فيه بيانات
+            return;
         }
 
-        const highestRole = member.roles.cache
-          .filter(role => role.id !== guild.id)
-          .sort((a, b) => b.position - a.position)
-          .first();
+        const topRole = roles.reduce((best, role) =>
+            role.position > best.position ? role : best
+        );
 
-        results.push({
-          userId: uid,
-          roleName: highestRole?.name || null,
-          roleId: highestRole?.id || null,
-          position: highestRole?.position ?? null
-        });
-      } catch (err) {
-        results.push({
-          userId: uid,
-          error: 'Failed to fetch user or role',
-          details: err.message || String(err)
-        });
-      }
-    }
+        responseText += `${topRole.position}\n${topRole.role}\n`;
+    });
 
-    res.json({ results });
-  } catch (err) {
-    console.error('❌ Error:', err);
-    res.status(500).json({ error: err.message || 'Unexpected error occurred.' });
-  } finally {
-    await tempClient.destroy();
-  }
+    res.setHeader('Content-Type', 'text/plain');
+    res.send(responseText.trim());
 });
 
-app.listen(port, () => {
-  console.log(`✅ API running on http://localhost:${port}`);
+// ========== تشغيل السيرفر ==========
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`✅ السيرفر شغال على http://localhost:${PORT}`);
 });
-
